@@ -295,7 +295,11 @@ def set_config(payload: VaultConfig) -> dict:
 
 
 @app.post("/api/convert")
-async def convert(file: UploadFile = File(...), mode: str = Form("digitale")) -> dict:
+async def convert(
+    file: UploadFile = File(...),
+    mode: str = Form("digitale"),
+    force: bool = Form(False),
+) -> dict:
     if mode not in MODES:
         raise HTTPException(400, f"Modalità sconosciuta: {mode}")
     allowed = MODES[mode]["ext"]
@@ -309,15 +313,21 @@ async def convert(file: UploadFile = File(...), mode: str = Form("digitale")) ->
             f"Accettati: {', '.join(sorted(allowed))}",
         )
 
-    ok, detail = engine_status(mode)
-    if not ok:
-        raise HTTPException(503, detail)
-
     data = await file.read()
     if not data:
         raise HTTPException(400, "Il file è vuoto.")
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, f"File troppo grande (max {MAX_UPLOAD_BYTES // 1024 // 1024} MB).")
+
+    # Un PDF che ha già il testo non ha bisogno dell'OCR: con MarkItDown ci
+    # vogliono secondi, con l'OCR senza GPU anche decine di minuti. Si chiede
+    # prima di partire; force=True per andare avanti lo stesso.
+    if mode != "digitale" and ext == ".pdf" and not force and engines.pdf_has_text(data):
+        return JSONResponse(status_code=409, content={"detail": "digital_pdf"})
+
+    ok, detail = engine_status(mode)
+    if not ok:
+        raise HTTPException(503, detail)
 
     def report(page: int, pages: int, note: str) -> None:
         set_progress(page=page, pages=pages, note=note)

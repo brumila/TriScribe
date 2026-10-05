@@ -5,7 +5,8 @@ Tutti girano sul PC e nessun documento esce dalla macchina. Le uniche
 connessioni sono verso Ollama su questo stesso PC (127.0.0.1, senza proxy) e,
 solo se mancano, il download dei modelli PaddleOCR.
 
-  digital()         MarkItDown        file con livello testo (PDF, Word, Excel...)
+  digital()         MarkItDown        file con livello testo (PDF, Word, Excel...),
+                    pdfplumber per le tabelle con i bordi dei PDF
   handwriting()     PaddleOCR-VL 1.6  scansioni e foto scritte a mano
   complex_layout()  GLM-OCR + Ollama  tabelle, formule, impaginazioni articolate
 """
@@ -19,6 +20,7 @@ import json
 import os
 import re
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -35,6 +37,11 @@ Progress = Callable[[int, int, str], None]
 
 class EngineError(RuntimeError):
     """Errore da mostrare all'utente così com'è."""
+
+
+def log(msg: str) -> None:
+    """Riga nel terminale di AVVIA.bat: tempi di ogni passaggio, per capire dove si ferma."""
+    print(f"  [TriScribe] {msg}", flush=True)
 
 
 # --------------------------------------------------------------------------
@@ -110,9 +117,119 @@ def _load_model(factory: Callable[[], object], what: str) -> object:
 _markitdown = None
 
 
+def pdf_has_text(data: bytes, min_chars: int = 20) -> bool:
+    """True se ogni pagina del PDF ha già il testo selezionabile: l'OCR non serve."""
+    import pypdfium2 as pdfium
+
+    try:
+        pdf = pdfium.PdfDocument(data)
+    except pdfium.PdfiumError:
+        return False
+    try:
+        if len(pdf) == 0:
+            return False
+        for i in range(len(pdf)):
+            page = pdf[i]
+            try:
+                textpage = page.get_textpage()
+                try:
+                    if len(textpage.get_text_range().strip()) < min_chars:
+                        return False
+                finally:
+                    textpage.close()
+            finally:
+                page.close()
+        return True
+    finally:
+        pdf.close()
+
+
+def _md_cell(text: str | None) -> str:
+    return " ".join((text or "").split()).replace("|", "\\|")
+
+
+def _table_md(rows: list[list[str | None]]) -> str:
+    rows = [[_md_cell(c) for c in r] for r in rows]
+    rows = [r for r in rows if any(r)]
+    if not rows:
+        return ""
+    ncol = max(len(r) for r in rows)
+    if ncol == 1:
+        # riquadro con titolo: nei moduli è un'etichetta, non una tabella
+        title, *body = [r[0] for r in rows]
+        return "\n\n".join([f"**{title}**", *body])
+    rows = [r + [""] * (ncol - len(r)) for r in rows]
+    lines = ["| " + " | ".join(rows[0]) + " |", "|" + " --- |" * ncol]
+    lines += ["| " + " | ".join(r) + " |" for r in rows[1:]]
+    return "\n".join(lines)
+
+
+def pdf_tables_markdown(data: bytes) -> str | None:
+    """Markdown di un PDF digitale con le tabelle a bordi ricostruite.
+
+    MarkItDown riconosce i moduli senza bordi ma appiattisce le tabelle con
+    le righe disegnate: ogni cella finisce su una riga a sé. pdfplumber le
+    legge dai bordi. None se il PDF non ha tabelle con almeno due colonne:
+    in quel caso resta MarkItDown.
+    """
+    import pdfplumber
+
+    blocks: list[list] = []          # ["text", righe] oppure ["table", celle], in ordine
+    grid_found = False
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        for page in pdf.pages:
+            width, height = page.width, page.height
+            # le cornici di pagina sembrano tabelle ma escono dai bordi
+            tables = [
+                t for t in page.find_tables()
+                if t.bbox[0] >= -1 and t.bbox[1] >= -1 and t.bbox[2] <= width + 1 and t.bbox[3] <= height + 1
+            ]
+            items = []                       # (top, x0, tipo, contenuto)
+            rest = page
+            for t in tables:
+                rows = t.extract()
+                if len(rows) >= 2 and max(len(r) for r in rows) >= 2:
+                    grid_found = True
+                items.append((t.bbox[1], t.bbox[0], "table", rows))
+                rest = rest.outside_bbox(t.bbox, strict=False)
+            for line in rest.extract_text_lines(return_chars=False):
+                items.append((line["top"], line["x0"], "text", line["text"]))
+            items.sort(key=lambda b: (b[0], b[1]))
+
+            for n, (_, _, kind, content) in enumerate(items):
+                prev = blocks[-1] if blocks else None
+                if kind == "text":
+                    if prev and prev[0] == "text":
+                        prev[1].append(content)
+                    else:
+                        blocks.append(["text", [content]])
+                elif (n == 0 and prev and prev[0] == "table"
+                      and max(map(len, prev[1]), default=0) == max(map(len, content), default=0) > 1):
+                    # tabella che prosegue dalla pagina prima: stesse colonne, niente in mezzo
+                    prev[1].extend(content)
+                else:
+                    blocks.append(["table", content])
+            page.close()
+
+    if not grid_found:
+        return None
+    parts = [_table_md(c) if kind == "table" else "\n".join(c) for kind, c in blocks]
+    return "\n\n".join(p for p in parts if p).strip()
+
+
 def digital(data: bytes, ext: str, filename: str) -> str:
     global _markitdown
     from markitdown import MarkItDown, StreamInfo
+
+    if ext == ".pdf":
+        try:
+            md = pdf_tables_markdown(data)
+        except Exception as exc:              # pdfplumber in difficoltà: resta MarkItDown
+            log(f"tabelle PDF non lette ({type(exc).__name__}: {exc}), uso MarkItDown")
+            md = None
+        if md:
+            log("PDF con tabelle a bordi: ricostruite con pdfplumber")
+            return md
 
     if _markitdown is None:
         # enable_plugins=False e nessun llm_client/docintel_endpoint:
@@ -162,8 +279,10 @@ def handwriting(data: bytes, ext: str, progress: Progress) -> str:
         pages = []
         for i, total, img in iter_pages(data, ext, HANDWRITING_SCALE):
             progress(i + 1, total, "")
+            started = time.perf_counter()
             for res in _vl.predict(to_bgr(img), markdown_ignore_labels=VL_IGNORE_LABELS):
                 pages.append(_plain_markdown(res))
+            log(f"PaddleOCR-VL pagina {i + 1}/{total}: {time.perf_counter() - started:.0f} s")
         return _vl.concatenate_markdown_pages(pages).strip()
 
 
@@ -200,9 +319,12 @@ GLM_OPTIONS = {
     "top_p": 0.00001,
     "top_k": 1,
     "repeat_penalty": 1.1,
-    "num_predict": 8192,
     "num_ctx": 16384,
 }
+# Token massimi per risposta. GLM-OCR ne prevede 8192 ovunque, ma senza GPU
+# una risposta che si ripete in loop fino a 8192 blocca la pagina per decine
+# di minuti. Questi tetti stanno larghi sui contenuti reali.
+GLM_MAX_TOKENS = {"text": 2048, "table": 4096, "formula": 1024, "page": 4096}
 OLLAMA_TIMEOUT = 900         # secondi per regione: senza GPU può essere lento
 
 # Opener senza proxy: la richiesta va dritta a 127.0.0.1 anche se il PC
@@ -244,7 +366,7 @@ def glm_status(url: str | None, model: str) -> tuple[bool, str]:
     return True, f"GLM-OCR via Ollama · {layout}"
 
 
-def _recognize(base: str, model: str, img, task: str) -> str:
+def _recognize(base: str, model: str, img, task: str, limit: str = "") -> str:
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=95)
     payload = {
@@ -252,7 +374,7 @@ def _recognize(base: str, model: str, img, task: str) -> str:
         "prompt": GLM_PROMPTS[task],
         "images": [base64.b64encode(buf.getvalue()).decode("ascii")],
         "stream": False,
-        "options": GLM_OPTIONS,
+        "options": {**GLM_OPTIONS, "num_predict": GLM_MAX_TOKENS[limit or task]},
     }
     try:
         out = _ollama(base, "/api/generate", payload, timeout=OLLAMA_TIMEOUT)
@@ -328,7 +450,9 @@ def complex_layout(data: bytes, ext: str, url: str | None, model: str, progress:
         for i, total, img in iter_pages(data, ext, COMPLEX_SCALE):
             first_load = _layout is None and layout_available()
             progress(i + 1, total, "Carico l'analisi del layout" if first_load else "")
+            started = time.perf_counter()
             regions = _regions(img)
+            log(f"GLM-OCR pagina {i + 1}/{total}: {len(regions)} regioni trovate in {time.perf_counter() - started:.0f} s")
             blocks = []
             for n, box in enumerate(regions, 1):
                 label = box.get("label", "text")
@@ -341,13 +465,20 @@ def complex_layout(data: bytes, ext: str, url: str | None, model: str, progress:
                 if x1 - x0 < 4 or y1 - y0 < 4:
                     continue
                 progress(i + 1, total, f"Regione {n} di {len(regions)}")
-                block = _format_block(_recognize(base, model, img.crop((x0, y0, x1, y1)), task), label, task)
+                started = time.perf_counter()
+                text = _recognize(base, model, img.crop((x0, y0, x1, y1)), task)
+                log(f"  regione {n}/{len(regions)} {label} {x1 - x0}x{y1 - y0}px: "
+                    f"{time.perf_counter() - started:.0f} s, {len(text)} caratteri")
+                block = _format_block(text, label, task)
                 if block:
                     blocks.append(block)
             if not regions:
                 # Niente layout, o nessuna regione di testo trovata: pagina intera.
                 progress(i + 1, total, "Pagina intera")
-                block = _format_block(_recognize(base, model, img, "text"), "text", "text")
+                started = time.perf_counter()
+                text = _recognize(base, model, img, "text", limit="page")
+                log(f"  pagina intera: {time.perf_counter() - started:.0f} s, {len(text)} caratteri")
+                block = _format_block(text, "text", "text")
                 blocks = [block] if block else []
             out_pages.append("\n\n".join(blocks))
         return "\n\n".join(p for p in out_pages if p).strip()

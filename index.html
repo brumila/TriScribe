@@ -738,12 +738,13 @@ async function pollProgress(t0) {
   if ($("view-load").classList.contains("active")) $("load-progress").textContent = parts.join(" · ");
 }
 
-async function convert(file) {
+async function convert(file, force) {
   const mode = S.mode, m = S.modes[mode];
   $("load-name").textContent = file.name;
   $("load-progress").textContent = "";
   $("load-hint").textContent = mode === "digitale" ? "" :
-    "Riconoscimento con " + (m ? m.tool : "OCR") + ". Senza scheda video ogni pagina richiede tempo: lascia aperta questa finestra.";
+    "Riconoscimento con " + (m ? m.tool : "OCR") + ": ogni pagina può richiedere qualche minuto. " +
+    "Lascia aperta questa finestra; nel terminale vedi i tempi di ogni passaggio.";
   showView("load");
   const t0 = Date.now();
   const timer = setInterval(() => pollProgress(t0), 1000);
@@ -751,6 +752,7 @@ async function convert(file) {
   const fd = new FormData();
   fd.append("file", file);
   fd.append("mode", mode);
+  fd.append("force", force ? "true" : "false");
 
   let r;
   try {
@@ -761,6 +763,19 @@ async function convert(file) {
     return toast("Server non raggiungibile", String(err), "err");
   }
   clearInterval(timer);
+
+  if (r.status === 409) {
+    const e = await r.clone().json().catch(() => ({}));
+    if (e.detail === "digital_pdf") {
+      showView("drop");
+      if (confirm("Questo PDF ha già il testo selezionabile: «Documento digitale» lo converte in pochi secondi, tabelle comprese.\n\n" +
+                  "OK = usa Documento digitale\nAnnulla = continua con l'OCR (molto più lento)")) {
+        selectMode("digitale");
+        return convert(file);
+      }
+      return convert(file, true);
+    }
+  }
 
   if (!r.ok) {
     const e = await r.json().catch(() => ({}));

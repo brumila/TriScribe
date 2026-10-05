@@ -6,7 +6,7 @@ TriScribe trasforma i tuoi documenti in Markdown senza farli uscire dal PC. Una 
 
 ## Cosa fa
 
-- **Converte i documenti digitali.** PDF con testo selezionabile, Word, Excel e PowerPoint diventano Markdown in pochi istanti. Il motore è MarkItDown.
+- **Converte i documenti digitali.** PDF con testo selezionabile, Word, Excel e PowerPoint diventano Markdown in pochi istanti. Il motore è MarkItDown; nei PDF le tabelle con i bordi restano tabelle, anche quando proseguono nella pagina dopo.
 - **Legge lo scritto a mano.** Appunti, quaderni e moduli compilati a penna, da scansione o da foto. Il motore è PaddleOCR-VL. Il corsivo resta il caso più difficile per qualsiasi OCR: rileggi sempre il risultato.
 - **Ricostruisce i layout complessi.** Tabelle, formule, schede tecniche e pagine a più colonne. Il motore è GLM-OCR: un modello trova le regioni della pagina, GLM-OCR legge ognuna con il prompt adatto (testo, tabella o formula).
 - **Ti dice a che punto è.** Con l'OCR ogni pagina richiede tempo: vedi la pagina in corso e il tempo trascorso.
@@ -18,7 +18,7 @@ TriScribe trasforma i tuoi documenti in Markdown senza farli uscire dal PC. Una 
 2. **Il contenuto è scritto a mano?** → ✍️ Scritto a mano.
 3. **È una scansione o una foto con tabelle, formule o impaginazione articolata?** → 🧩 Layout complesso.
 
-Se scegli Documento digitale su una scansione, TriScribe se ne accorge e ti indica le altre due.
+Se scegli Documento digitale su una scansione, TriScribe se ne accorge e ti indica le altre due. Al contrario, se scegli una modalità OCR su un PDF che ha già il testo, te lo segnala prima di partire: l'OCR ci metterebbe minuti per un risultato che il digitale dà in un secondo.
 
 ## Cosa serve
 
@@ -71,6 +71,7 @@ Al primo avvio clicca sul percorso in alto a destra e incolla la cartella dove v
 - Le immagini dentro i documenti non vengono salvate: TriScribe estrae il testo.
 - Fogli Excel con celle unite o grafici perdono parte della struttura; le tabelle piatte vengono bene.
 - Una conversione alla volta: i modelli OCR occupano qualche GB di RAM.
+- PaddleOCR, come lo installa TriScribe, usa solo il processore. Ollama usa la scheda video se la supporta: per sapere dove gira GLM-OCR, durante una conversione lancia `ollama ps` e guarda la colonna PROCESSOR. Su processore ogni pagina OCR può richiedere minuti; i tempi di ogni passaggio compaiono nel terminale.
 
 ## Crediti
 

@@ -1,0 +1,888 @@
+<!doctype html>
+<html lang="it" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TriScribe — Da documento a Markdown</title>
+<style>
+/* ─────────────────────────── Design tokens ─────────────────────────── */
+:root{
+  --bg:#0e1116; --bg-2:#161b22; --bg-3:#1c2430; --bg-4:#232d3b;
+  --line:#2a3441; --line-2:#39465a;
+  --fg:#e6edf3; --fg-2:#9aa8b8; --fg-3:#6b7a8d;
+  --accent:#4f9cf9; --accent-2:#3b82f6; --accent-soft:rgba(79,156,249,.13);
+  --ok:#3fb950; --ok-soft:rgba(63,185,80,.13);
+  --warn:#d29922; --err:#f85149; --err-soft:rgba(248,81,73,.13);
+  --radius:12px; --radius-sm:8px;
+  --shadow:0 8px 28px rgba(0,0,0,.45);
+  --mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,"Segoe UI",Inter,Roboto,system-ui,sans-serif;
+}
+[data-theme="light"]{
+  --bg:#f6f8fa; --bg-2:#ffffff; --bg-3:#f0f3f6; --bg-4:#e6ebf1;
+  --line:#d7dee6; --line-2:#c2ccd8;
+  --fg:#1c2530; --fg-2:#5a6875; --fg-3:#8996a4;
+  --accent:#0969da; --accent-2:#0757ba; --accent-soft:rgba(9,105,218,.09);
+  --ok:#1a7f37; --ok-soft:rgba(26,127,55,.1);
+  --warn:#9a6700; --err:#cf222e; --err-soft:rgba(207,34,46,.1);
+  --shadow:0 8px 28px rgba(30,45,65,.12);
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--fg);
+  font-family:var(--sans); font-size:14.5px; line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+  display:flex; flex-direction:column;
+}
+button,input,select,textarea{font:inherit;color:inherit}
+::selection{background:var(--accent-soft)}
+
+/* ─────────────────────────── Topbar ─────────────────────────── */
+.topbar{
+  display:flex; align-items:center; gap:14px;
+  padding:0 20px; height:56px; flex:0 0 auto;
+  background:var(--bg-2); border-bottom:1px solid var(--line);
+}
+.brand{display:flex;align-items:center;gap:10px;font-weight:650;letter-spacing:-.01em}
+.brand svg{color:var(--accent)}
+.brand small{color:var(--fg-3);font-weight:450;font-size:12px;padding-left:2px}
+.spacer{flex:1}
+.chip{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:5px 11px;border-radius:999px;font-size:12.5px;
+  background:var(--bg-3);border:1px solid var(--line);color:var(--fg-2);
+  max-width:420px;
+}
+.chip.ok{background:var(--ok-soft);border-color:transparent;color:var(--ok)}
+.chip.bad{background:var(--err-soft);border-color:transparent;color:var(--err)}
+.chip .path{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:11.5px}
+.dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex:0 0 auto}
+
+.icon-btn{
+  display:grid;place-items:center;width:34px;height:34px;
+  background:transparent;border:1px solid var(--line);border-radius:var(--radius-sm);
+  cursor:pointer;color:var(--fg-2);transition:.15s;
+}
+.icon-btn:hover{background:var(--bg-3);color:var(--fg);border-color:var(--line-2)}
+
+/* ─────────────────────────── Layout ─────────────────────────── */
+main{flex:1;min-height:0;display:flex;flex-direction:column}
+.view{display:none;flex:1;min-height:0}
+.view.active{display:flex}
+
+/* ─────────────────────────── Dropzone ─────────────────────────── */
+/* margin:auto invece di justify-content: centrata se c'è spazio, scorre se lo schermo è basso */
+#view-drop{padding:32px;overflow-y:auto}
+.drop-wrap{width:100%;max-width:700px;text-align:center;margin:auto}
+.drop-wrap h1{font-size:26px;margin:0 0 6px;letter-spacing:-.02em}
+.drop-wrap p.sub{margin:0 0 26px;color:var(--fg-2)}
+.dropzone{
+  border:2px dashed var(--line-2); border-radius:16px;
+  padding:52px 28px; background:var(--bg-2);
+  cursor:pointer; transition:.18s;
+}
+.dropzone:hover{border-color:var(--accent);background:var(--bg-3)}
+.dropzone.over{border-color:var(--accent);background:var(--accent-soft);transform:scale(1.01)}
+.dropzone svg{color:var(--fg-3);margin-bottom:14px;transition:.18s}
+.dropzone:hover svg,.dropzone.over svg{color:var(--accent)}
+.dropzone .big{font-size:16px;font-weight:600;margin-bottom:5px}
+.dropzone .small{color:var(--fg-3);font-size:13px}
+.formats{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:22px}
+.fmt{
+  padding:4px 12px;border-radius:999px;font-size:12px;font-weight:600;
+  background:var(--bg-3);border:1px solid var(--line);color:var(--fg-2);
+  font-family:var(--mono);
+}
+.privacy{
+  margin-top:26px;font-size:12.5px;color:var(--fg-3);
+  display:flex;align-items:center;justify-content:center;gap:7px;
+}
+
+/* ─────────────────────────── Modalità ─────────────────────────── */
+.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:0 0 16px;text-align:left}
+.mode{
+  display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:13px 14px;
+  background:var(--bg-2);border:1px solid var(--line);border-radius:var(--radius);
+  cursor:pointer;transition:.15s;color:var(--fg);text-align:left;
+}
+.mode:hover{border-color:var(--line-2);background:var(--bg-3)}
+.mode.active{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}
+.mode svg{color:var(--fg-3);margin-bottom:4px;transition:.15s}
+.mode.active svg{color:var(--accent)}
+.mode b{font-size:13.5px;font-weight:650}
+.mode .desc{font-size:12px;color:var(--fg-2);line-height:1.4}
+.mode .engine{display:flex;align-items:center;gap:6px;margin-top:5px;font-family:var(--mono);font-size:11px;color:var(--fg-3)}
+.mode .engine .dot{width:6px;height:6px;color:var(--ok)}
+.mode.off .engine .dot{color:var(--warn)}
+.mode-hint{margin-top:14px;font-size:12.5px;color:var(--warn)}
+.mode-hint:empty{display:none}
+@media (max-width:640px){.modes{grid-template-columns:1fr}}
+
+/* ─────────────────────────── Loading ─────────────────────────── */
+#view-load{align-items:center;justify-content:center;flex-direction:column;gap:18px}
+.spinner{
+  width:38px;height:38px;border-radius:50%;
+  border:3px solid var(--line);border-top-color:var(--accent);
+  animation:spin .7s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+#load-name{color:var(--fg-2);font-family:var(--mono);font-size:13px}
+#load-progress{color:var(--fg-2);font-size:13px;min-height:1.3em}
+#load-hint{color:var(--fg-3);font-size:12px;max-width:440px;text-align:center;line-height:1.5}
+#load-hint:empty{display:none}
+
+/* ─────────────────────────── Result ─────────────────────────── */
+#view-result{gap:0}
+.output{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)}
+.toolbar{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:10px 18px;border-bottom:1px solid var(--line);background:var(--bg-2);
+}
+.tabs{display:flex;background:var(--bg-3);border-radius:var(--radius-sm);padding:3px;gap:2px}
+.tab{
+  padding:5px 15px;border:0;background:transparent;border-radius:6px;
+  cursor:pointer;color:var(--fg-2);font-size:13px;font-weight:550;transition:.15s;
+}
+.tab:hover{color:var(--fg)}
+.tab.active{background:var(--bg-2);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.meta{display:flex;gap:14px;color:var(--fg-3);font-size:12px;flex-wrap:wrap}
+.meta b{color:var(--fg-2);font-weight:600}
+
+.pane{flex:1;min-height:0;overflow:auto}
+#raw{
+  margin:0;padding:22px 26px;white-space:pre-wrap;word-break:break-word;
+  font-family:var(--mono);font-size:13px;line-height:1.65;color:var(--fg);
+}
+#preview{padding:22px 30px;max-width:860px}
+#preview h1,#preview h2,#preview h3,#preview h4{line-height:1.3;margin:1.4em 0 .5em;letter-spacing:-.01em}
+#preview h1{font-size:1.7em;border-bottom:1px solid var(--line);padding-bottom:.3em}
+#preview h2{font-size:1.35em;border-bottom:1px solid var(--line);padding-bottom:.25em}
+#preview h3{font-size:1.13em}
+#preview h4{font-size:1em;color:var(--fg-2)}
+#preview p{margin:.75em 0}
+#preview ul,#preview ol{margin:.6em 0;padding-left:1.5em}
+#preview li{margin:.22em 0}
+#preview a{color:var(--accent)}
+#preview code{
+  background:var(--bg-3);padding:.15em .4em;border-radius:5px;
+  font-family:var(--mono);font-size:.88em;
+}
+#preview pre{
+  background:var(--bg-2);border:1px solid var(--line);border-radius:var(--radius-sm);
+  padding:14px 16px;overflow-x:auto;
+}
+#preview pre code{background:none;padding:0;font-size:.85em}
+#preview blockquote{
+  margin:.9em 0;padding:.1em 1em;border-left:3px solid var(--line-2);color:var(--fg-2);
+}
+#preview table{border-collapse:collapse;margin:1em 0;width:100%;font-size:.92em;display:block;overflow-x:auto}
+#preview th,#preview td{border:1px solid var(--line);padding:7px 11px;text-align:left}
+#preview th{background:var(--bg-3);font-weight:650}
+#preview tr:nth-child(2n) td{background:var(--bg-2)}
+#preview hr{border:0;border-top:1px solid var(--line);margin:1.6em 0}
+#preview img{max-width:100%}
+
+/* ─────────────────────────── Sidebar ─────────────────────────── */
+.sidebar{
+  width:346px;flex:0 0 346px;background:var(--bg-2);
+  border-left:1px solid var(--line);overflow-y:auto;padding:18px;
+  display:flex;flex-direction:column;gap:18px;
+}
+.card{background:var(--bg-3);border:1px solid var(--line);border-radius:var(--radius);padding:15px}
+.card h3{
+  margin:0 0 13px;font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--fg-3);font-weight:700;display:flex;align-items:center;gap:7px;
+}
+.field{margin-bottom:12px}
+.field:last-child{margin-bottom:0}
+label{display:block;font-size:12px;color:var(--fg-2);margin-bottom:5px;font-weight:550}
+select,input[type=text]{
+  width:100%;padding:8px 11px;background:var(--bg-2);color:var(--fg);
+  border:1px solid var(--line-2);border-radius:var(--radius-sm);outline:none;transition:.15s;
+}
+select:focus,input[type=text]:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+input[type=text]{font-family:var(--mono);font-size:12.5px}
+
+.switch{display:flex;align-items:flex-start;gap:10px;cursor:pointer;user-select:none}
+.switch input{
+  appearance:none;width:36px;height:20px;background:var(--line-2);border-radius:999px;
+  position:relative;cursor:pointer;transition:.18s;flex:0 0 auto;margin:1px 0 0;
+}
+.switch input::after{
+  content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;
+  background:#fff;border-radius:50%;transition:.18s;
+}
+.switch input:checked{background:var(--accent)}
+.switch input:checked::after{transform:translateX(16px)}
+.switch span{font-size:12.5px;color:var(--fg-2);line-height:1.4}
+.switch span b{display:block;color:var(--fg);font-weight:600;font-size:13px}
+
+.btn{
+  display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
+  padding:9px 14px;border-radius:var(--radius-sm);border:1px solid var(--line-2);
+  background:var(--bg-2);color:var(--fg);cursor:pointer;font-weight:600;font-size:13.5px;
+  transition:.15s;
+}
+.btn:hover:not(:disabled){background:var(--bg-4);border-color:var(--fg-3)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover:not(:disabled){background:var(--accent-2);border-color:var(--accent-2)}
+.btn.ghost{background:transparent}
+.btn-row{display:flex;gap:8px}
+.btn-row .btn{width:auto;flex:1}
+
+.pathview{
+  margin-top:11px;padding:9px 11px;background:var(--bg-2);border:1px solid var(--line);
+  border-radius:var(--radius-sm);font-family:var(--mono);font-size:11px;color:var(--fg-3);
+  word-break:break-all;line-height:1.5;
+}
+.pathview b{color:var(--accent);font-weight:600}
+
+/* ─────────────────────────── Modal ─────────────────────────── */
+.overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(3px);
+  display:none;align-items:center;justify-content:center;padding:24px;z-index:60;
+}
+.overlay.open{display:flex}
+.modal{
+  background:var(--bg-2);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);padding:22px;width:100%;max-width:520px;
+}
+.modal h2{margin:0 0 6px;font-size:17px;letter-spacing:-.01em}
+.modal p{margin:0 0 16px;color:var(--fg-2);font-size:13.5px}
+
+/* ─────────────────────────── Toast ─────────────────────────── */
+#toasts{position:fixed;bottom:20px;right:20px;display:flex;flex-direction:column;gap:9px;z-index:80}
+.toast{
+  display:flex;align-items:flex-start;gap:10px;min-width:270px;max-width:400px;
+  padding:12px 15px;border-radius:var(--radius-sm);background:var(--bg-2);
+  border:1px solid var(--line);border-left:3px solid var(--accent);
+  box-shadow:var(--shadow);font-size:13px;animation:slide .22s ease-out;
+}
+.toast.ok{border-left-color:var(--ok)}
+.toast.err{border-left-color:var(--err)}
+.toast b{display:block;margin-bottom:2px}
+.toast small{color:var(--fg-3);font-family:var(--mono);font-size:11px;word-break:break-all}
+@keyframes slide{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}
+
+@media (max-width:900px){
+  #view-result{flex-direction:column}
+  .sidebar{width:auto;flex:0 0 auto;border-left:0;border-top:1px solid var(--line)}
+  .chip .path{display:none}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>
+      <path d="M8 17v-5l2.5 3L13 12v5"/>
+    </svg>
+    TriScribe <small>locale</small>
+  </div>
+  <div class="spacer"></div>
+  <div class="chip" id="vault-chip" title="Clicca per cambiare il percorso del vault" style="cursor:pointer">
+    <span class="dot"></span><span class="path">…</span>
+  </div>
+  <button class="icon-btn" id="rescan-btn" title="Rileggi le cartelle dal disco" aria-label="Rileggi le cartelle">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+    </svg>
+  </button>
+  <button class="icon-btn" id="theme-btn" title="Tema chiaro / scuro" aria-label="Cambia tema">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>
+    </svg>
+  </button>
+</header>
+
+<main>
+  <!-- ══════════ Upload ══════════ -->
+  <section class="view active" id="view-drop">
+    <div class="drop-wrap">
+      <h1>Da documento a Markdown</h1>
+      <p class="sub">Tutto avviene sul tuo computer. Nessun file viene caricato online.</p>
+
+      <div class="modes" role="radiogroup" aria-label="Cosa vuoi fare">
+        <button class="mode active" data-mode="digitale" role="radio" aria-checked="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/></svg>
+          <b>Documento digitale</b>
+          <span class="desc">PDF con testo selezionabile, Word, Excel, PowerPoint</span>
+          <span class="engine"><span class="dot"></span><span>MarkItDown</span></span>
+        </button>
+        <button class="mode" data-mode="manoscritto" role="radio" aria-checked="false">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          <b>Scritto a mano</b>
+          <span class="desc">Appunti, quaderni e moduli compilati a penna</span>
+          <span class="engine"><span class="dot"></span><span>PaddleOCR-VL</span></span>
+        </button>
+        <button class="mode" data-mode="complesso" role="radio" aria-checked="false">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          <b>Layout complesso</b>
+          <span class="desc">Scansioni con tabelle, formule, più colonne</span>
+          <span class="engine"><span class="dot"></span><span>GLM-OCR</span></span>
+        </button>
+      </div>
+
+      <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Seleziona o trascina un file">
+        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v13"/>
+        </svg>
+        <div class="big">Trascina qui il file</div>
+        <div class="small">oppure clicca per sceglierlo</div>
+      </div>
+      <input type="file" id="file-input" hidden accept=".pdf,.docx,.xlsx,.xls,.pptx">
+
+      <div class="formats" id="formats"></div>
+      <div class="mode-hint" id="mode-hint"></div>
+      <div class="privacy">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span>Elaborazione offline · il server ascolta solo su 127.0.0.1</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ Loading ══════════ -->
+  <section class="view" id="view-load">
+    <div class="spinner"></div>
+    <div id="load-name"></div>
+    <div id="load-progress"></div>
+    <div id="load-hint"></div>
+  </section>
+
+  <!-- ══════════ Result ══════════ -->
+  <section class="view" id="view-result">
+    <div class="output">
+      <div class="toolbar">
+        <div class="tabs">
+          <button class="tab active" data-pane="raw">Markdown</button>
+          <button class="tab" data-pane="preview">Anteprima</button>
+        </div>
+        <div class="meta" id="meta"></div>
+        <div class="spacer"></div>
+        <button class="btn ghost" id="btn-new" style="width:auto">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          Nuovo file
+        </button>
+      </div>
+      <pre class="pane" id="raw"></pre>
+      <div class="pane" id="preview" style="display:none"></div>
+    </div>
+
+    <aside class="sidebar">
+      <div class="card">
+        <h3>Esporta</h3>
+        <div class="btn-row">
+          <button class="btn" id="btn-copy">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copia
+          </button>
+          <button class="btn" id="btn-download">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+            Scarica
+          </button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2z"/></svg>
+          Salva nel vault
+        </h3>
+
+        <div class="field">
+          <label for="sel-project">Progetto</label>
+          <select id="sel-project"></select>
+        </div>
+        <div class="field">
+          <label for="sel-folder">Cartella</label>
+          <select id="sel-folder"></select>
+        </div>
+        <div class="field">
+          <label for="in-name">Nome file</label>
+          <input type="text" id="in-name" spellcheck="false" placeholder="nome-documento">
+        </div>
+        <div class="field">
+          <label class="switch">
+            <input type="checkbox" id="chk-fm" checked>
+            <span><b>Front-matter YAML</b>titolo, fonte, tipo, data, strumento, tag #da-convertire</span>
+          </label>
+        </div>
+
+        <div class="pathview" id="pathview"></div>
+
+        <button class="btn primary" id="btn-save" style="margin-top:12px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
+          Salva nel vault
+        </button>
+      </div>
+    </aside>
+  </section>
+</main>
+
+<!-- ══════════ Modal configurazione vault ══════════ -->
+<div class="overlay" id="vault-modal">
+  <div class="modal">
+    <h2>Percorso del vault</h2>
+    <p>Incolla il percorso completo della cartella in cui salvare, per esempio la radice di un vault Obsidian. Le sue sottocartelle diventano le destinazioni proposte.</p>
+    <input type="text" id="in-vault" placeholder="C:\Users\nome\Documents\Vault" spellcheck="false">
+    <div class="btn-row" style="margin-top:16px">
+      <button class="btn ghost" id="btn-vault-cancel">Annulla</button>
+      <button class="btn primary" id="btn-vault-save">Salva</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+"use strict";
+
+/* ═══════════════════════ Stato ═══════════════════════ */
+const S = { markdown:"", source:"", stem:"", kind:"", tool:"", projects:[], vaultOk:false, vaultPath:"", modes:{}, mode:"digitale" };
+const $ = id => document.getElementById(id);
+
+/* ═══════════════════════ Tema ═══════════════════════ */
+const savedTheme = (() => { try { return localStorage.getItem("tri-theme"); } catch { return null; } })();
+if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+$("theme-btn").onclick = () => {
+  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("tri-theme", next); } catch {}
+};
+
+/* ═══════════════════════ Toast ═══════════════════════ */
+function toast(title, detail, kind) {
+  const el = document.createElement("div");
+  el.className = "toast " + (kind || "");
+  el.innerHTML = "<div><b></b>" + (detail ? "<small></small>" : "") + "</div>";
+  el.querySelector("b").textContent = title;
+  if (detail) el.querySelector("small").textContent = detail;
+  $("toasts").appendChild(el);
+  setTimeout(() => { el.style.opacity = "0"; el.style.transition = ".3s"; setTimeout(() => el.remove(), 320); }, kind === "err" ? 7000 : 3800);
+}
+
+function showView(name) {
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  $("view-" + name).classList.add("active");
+}
+
+/* ═══════════════════════ Markdown → HTML (parser locale) ═══════════════════════ */
+function esc(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// Il testo arriva già HTML-escaped, ma esc() non tocca le virgolette: vanno
+// neutralizzate qui, o un URL malformato in un PDF potrebbe uscire dall'attributo.
+function attr(s) { return String(s).replace(/"/g, "&quot;"); }
+
+// Whitelist di schemi: blocca javascript:, data:, vbscript: e simili.
+function safeUrl(u) {
+  const s = String(u).trim();
+  return /^(https?:|mailto:|#|\.{0,2}\/)/i.test(s) ? attr(s) : "#";
+}
+
+function inline(s) {
+  return s
+    .replace(/`([^`]+)`/g, (m, c) => "<code>" + c + "</code>")
+    .replace(/!\[([^\]]*)\]\(([^)\s]+)[^)]*\)/g,
+      (m, alt, url) => '<img src="' + safeUrl(url) + '" alt="' + attr(alt) + '">')
+    .replace(/\[([^\]]+)\]\(([^)\s]+)[^)]*\)/g,
+      (m, txt, url) => '<a href="' + safeUrl(url) + '" target="_blank" rel="noopener noreferrer">' + txt + "</a>")
+    .replace(/\*\*\*([^*]+)\*\*\*/g, "<strong><em>$1</em></strong>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+    .replace(/~~([^~]+)~~/g, "<del>$1</del>");
+}
+
+function mdToHtml(src) {
+  const blocks = [];
+  // 1. estrae i code fence prima di qualsiasi altra trasformazione
+  src = src.replace(/```[\w-]*\n([\s\S]*?)```/g, (m, code) => {
+    blocks.push("<pre><code>" + esc(code.replace(/\n$/, "")) + "</code></pre>");
+    return "\u0000B" + (blocks.length - 1) + "\u0000";
+  });
+
+  const lines = esc(src).split("\n");
+  const out = [];
+  const listStack = [];   // {tag, indent}
+
+  const closeLists = (toIndent) => {
+    while (listStack.length && listStack[listStack.length - 1].indent >= toIndent) {
+      out.push("</" + listStack.pop().tag + ">");
+    }
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // segnaposto code block
+    const ph = trimmed.match(/^\u0000B(\d+)\u0000$/);
+    if (ph) { closeLists(0); out.push(blocks[+ph[1]]); continue; }
+
+    if (!trimmed) { closeLists(0); continue; }
+
+    // tabella: riga con pipe seguita da separatore |---|---|
+    if (/\|/.test(trimmed) && i + 1 < lines.length && /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(lines[i + 1]) && lines[i + 1].includes("-")) {
+      closeLists(0);
+      const cells = r => r.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim());
+      const head = cells(trimmed);
+      let html = "<table><thead><tr>" + head.map(c => "<th>" + inline(c) + "</th>").join("") + "</tr></thead><tbody>";
+      i += 2;
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) {
+        html += "<tr>" + cells(lines[i]).map(c => "<td>" + inline(c) + "</td>").join("") + "</tr>";
+        i++;
+      }
+      i--;
+      out.push(html + "</tbody></table>");
+      continue;
+    }
+
+    // heading
+    const h = trimmed.match(/^(#{1,6})\s+(.*)$/);
+    if (h) { closeLists(0); out.push("<h" + h[1].length + ">" + inline(h[2]) + "</h" + h[1].length + ">"); continue; }
+
+    // hr
+    if (/^([-*_])\s*(\1\s*){2,}$/.test(trimmed)) { closeLists(0); out.push("<hr>"); continue; }
+
+    // blockquote
+    if (/^&gt;\s?/.test(trimmed)) {
+      closeLists(0);
+      out.push("<blockquote>" + inline(trimmed.replace(/^&gt;\s?/, "")) + "</blockquote>");
+      continue;
+    }
+
+    // liste (con annidamento per indentazione)
+    const li = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+    if (li) {
+      const indent = li[1].replace(/\t/g, "    ").length;
+      const tag = /^\d/.test(li[2]) ? "ol" : "ul";
+      while (listStack.length && listStack[listStack.length - 1].indent > indent) out.push("</" + listStack.pop().tag + ">");
+      const top = listStack[listStack.length - 1];
+      if (!top || top.indent < indent) { listStack.push({ tag, indent }); out.push("<" + tag + ">"); }
+      else if (top.tag !== tag) { out.push("</" + listStack.pop().tag + ">"); listStack.push({ tag, indent }); out.push("<" + tag + ">"); }
+      out.push("<li>" + inline(li[3]) + "</li>");
+      continue;
+    }
+
+    closeLists(0);
+    out.push("<p>" + inline(trimmed) + "</p>");
+  }
+  closeLists(0);
+  return out.join("\n");
+}
+
+/* ═══════════════════════ Stato vault ═══════════════════════ */
+async function loadStatus() {
+  const r = await fetch("/api/status");
+  const d = await r.json();
+  S.projects = d.projects; S.vaultOk = d.vault_ok; S.vaultPath = d.vault_path;
+
+  const chip = $("vault-chip");
+  chip.className = "chip " + (d.vault_ok ? "ok" : "bad");
+  chip.querySelector(".path").textContent = d.vault_ok ? d.vault_path : "vault non trovato — clicca per configurare";
+  chip.title = d.vault_ok ? d.vault_path + "  (clicca per cambiare)" : "Clicca per impostare il percorso del vault";
+
+  S.modes = d.modes;
+  renderModeInfo();
+
+  const sp = $("sel-project"), sf = $("sel-folder");
+  const prevProject = sp.value, prevFolder = sf.value;
+  sp.innerHTML = "";
+  d.projects.forEach(p => {
+    const o = document.createElement("option");
+    o.value = p.id; o.textContent = p.label;
+    sp.appendChild(o);
+  });
+  // dopo "Rileggi" resta selezionata la destinazione di prima, se esiste ancora
+  if (d.projects.some(p => p.id === prevProject)) sp.value = prevProject;
+  fillFolders();
+  if ([...sf.options].some(o => o.value === prevFolder)) { sf.value = prevFolder; updatePath(); }
+  $("btn-save").disabled = !d.vault_ok;
+}
+
+function fillFolders() {
+  const proj = S.projects.find(p => p.id === $("sel-project").value);
+  const sf = $("sel-folder");
+  sf.innerHTML = "";
+  const root = document.createElement("option");
+  root.value = ""; root.textContent = "(radice del progetto)";
+  sf.appendChild(root);
+  (proj ? proj.folders : []).forEach(f => {
+    const o = document.createElement("option");
+    o.value = f; o.textContent = f;
+    sf.appendChild(o);
+  });
+  updatePath();
+}
+
+function updatePath() {
+  const parts = [$("sel-project").value, $("sel-folder").value].filter(v => v && v !== ".");
+  const name = ($("in-name").value.trim() || "documento").replace(/\.md$/i, "") + ".md";
+  $("pathview").innerHTML = esc(S.vaultPath + "\\" + parts.join("\\") + (parts.length ? "\\" : "")) + "<b>" + esc(name) + "</b>";
+}
+
+$("sel-project").onchange = fillFolders;
+$("sel-folder").onchange = updatePath;
+$("in-name").oninput = updatePath;
+
+$("rescan-btn").onclick = async () => {
+  try {
+    await loadStatus();
+    toast("Cartelle rilette", S.vaultPath, "ok");
+  } catch (err) {
+    toast("Impossibile rileggere le cartelle", String(err), "err");
+  }
+};
+
+/* ═══════════════════════ Modalità ═══════════════════════ */
+const MODES = ["digitale", "manoscritto", "complesso"];
+const savedMode = (() => { try { return localStorage.getItem("tri-mode"); } catch { return null; } })();
+if (MODES.includes(savedMode)) S.mode = savedMode;
+
+function selectMode(mode) {
+  S.mode = mode;
+  try { localStorage.setItem("tri-mode", mode); } catch {}
+  document.querySelectorAll(".mode").forEach(b => {
+    const on = b.dataset.mode === mode;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-checked", on ? "true" : "false");
+  });
+  renderModeInfo();
+}
+
+// Formati accettati e stato del motore della modalità scelta
+function renderModeInfo() {
+  const m = S.modes[S.mode];
+  const exts = m ? m.allowed : [];
+  $("formats").innerHTML = "";
+  exts.forEach(e => {
+    const s = document.createElement("span");
+    s.className = "fmt"; s.textContent = e;
+    $("formats").appendChild(s);
+  });
+  if (exts.length) $("file-input").accept = exts.join(",");
+  $("mode-hint").textContent = m && !m.ok ? "Non disponibile: " + m.detail : "";
+  document.querySelectorAll(".mode").forEach(b => {
+    const mm = S.modes[b.dataset.mode];
+    b.classList.toggle("off", !!mm && !mm.ok);
+    if (mm) b.title = mm.detail;
+  });
+}
+
+document.querySelectorAll(".mode").forEach(b => b.onclick = () => selectMode(b.dataset.mode));
+selectMode(S.mode);
+
+/* ═══════════════════════ Modal vault ═══════════════════════ */
+$("vault-chip").onclick = () => {
+  $("in-vault").value = S.vaultPath || "";
+  $("vault-modal").classList.add("open");
+  $("in-vault").focus();
+};
+$("btn-vault-cancel").onclick = () => $("vault-modal").classList.remove("open");
+$("vault-modal").onclick = e => { if (e.target === $("vault-modal")) $("vault-modal").classList.remove("open"); };
+$("in-vault").onkeydown = e => { if (e.key === "Enter") $("btn-vault-save").click(); };
+
+$("btn-vault-save").onclick = async () => {
+  const v = $("in-vault").value.trim();
+  if (!v) return;
+  const r = await fetch("/api/config", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ vault_path: v })
+  });
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    return toast("Percorso non valido", e.detail || "", "err");
+  }
+  $("vault-modal").classList.remove("open");
+  await loadStatus();
+  toast("Vault aggiornato", S.vaultPath, "ok");
+};
+
+/* ═══════════════════════ Upload e conversione ═══════════════════════ */
+const dz = $("dropzone"), fi = $("file-input");
+
+dz.onclick = () => fi.click();
+dz.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fi.click(); } };
+fi.onchange = () => { if (fi.files[0]) convert(fi.files[0]); };
+
+["dragenter", "dragover"].forEach(ev =>
+  dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add("over"); }));
+["dragleave", "drop"].forEach(ev =>
+  dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove("over"); }));
+dz.addEventListener("drop", e => { if (e.dataTransfer.files[0]) convert(e.dataTransfer.files[0]); });
+
+// impedisce che un file trascinato fuori dalla dropzone apra una nuova scheda
+["dragover", "drop"].forEach(ev =>
+  window.addEventListener(ev, e => { if (e.target !== dz && !dz.contains(e.target)) e.preventDefault(); }));
+
+function fmtMs(ms) {
+  if (ms < 10000) return ms.toLocaleString("it-IT") + " ms";
+  const s = Math.round(ms / 1000);
+  return s < 60 ? s + " s" : Math.floor(s / 60) + " min " + (s % 60) + " s";
+}
+
+// L'OCR può durare minuti: pagina corrente e tempo trascorso, ogni secondo
+async function pollProgress(t0) {
+  const s = Math.round((Date.now() - t0) / 1000);
+  const parts = [Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0")];
+  try {
+    const p = await (await fetch("/api/progress")).json();
+    if (p.busy && p.note) parts.unshift(p.note);
+    if (p.busy && p.pages) parts.unshift("Pagina " + p.page + " di " + p.pages);
+  } catch {}
+  if ($("view-load").classList.contains("active")) $("load-progress").textContent = parts.join(" · ");
+}
+
+async function convert(file) {
+  const mode = S.mode, m = S.modes[mode];
+  $("load-name").textContent = file.name;
+  $("load-progress").textContent = "";
+  $("load-hint").textContent = mode === "digitale" ? "" :
+    "Riconoscimento con " + (m ? m.tool : "OCR") + ". Senza scheda video ogni pagina richiede tempo: lascia aperta questa finestra.";
+  showView("load");
+  const t0 = Date.now();
+  const timer = setInterval(() => pollProgress(t0), 1000);
+
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("mode", mode);
+
+  let r;
+  try {
+    r = await fetch("/api/convert", { method: "POST", body: fd });
+  } catch (err) {
+    clearInterval(timer);
+    showView("drop");
+    return toast("Server non raggiungibile", String(err), "err");
+  }
+  clearInterval(timer);
+
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    showView("drop");
+    return toast("Conversione fallita", e.detail || ("HTTP " + r.status), "err");
+  }
+
+  const d = await r.json();
+  S.markdown = d.markdown; S.source = d.source; S.stem = d.stem; S.kind = d.kind; S.tool = d.tool;
+
+  $("raw").textContent = d.markdown;
+  $("preview").innerHTML = mdToHtml(d.markdown);
+  $("meta").innerHTML = "";
+  [["file", d.source], ["motore", d.tool], ["parole", d.words.toLocaleString("it-IT")],
+   ["caratteri", d.chars.toLocaleString("it-IT")], ["tempo", fmtMs(d.ms)]]
+    .forEach(([k, v]) => {
+      const s = document.createElement("span");
+      s.innerHTML = "<b>" + esc(String(v)) + "</b> " + k;
+      $("meta").appendChild(s);
+    });
+
+  $("in-name").value = d.stem;
+  updatePath();
+  showView("result");
+  fi.value = "";
+}
+
+$("btn-new").onclick = () => { showView("drop"); fi.value = ""; };
+
+/* ═══════════════════════ Tab ═══════════════════════ */
+document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+  t.classList.add("active");
+  const raw = t.dataset.pane === "raw";
+  $("raw").style.display = raw ? "" : "none";
+  $("preview").style.display = raw ? "none" : "";
+});
+
+/* ═══════════════════════ Copia / Download ═══════════════════════ */
+$("btn-copy").onclick = async () => {
+  try {
+    await navigator.clipboard.writeText(S.markdown);
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = S.markdown; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); } catch { return toast("Copia non riuscita", "", "err"); }
+    finally { ta.remove(); }
+  }
+  toast("Markdown copiato", S.markdown.length.toLocaleString("it-IT") + " caratteri", "ok");
+};
+
+$("btn-download").onclick = () => {
+  const name = ($("in-name").value.trim() || S.stem || "documento").replace(/\.md$/i, "") + ".md";
+  const blob = new Blob([S.markdown], { type: "text/markdown;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+  toast("Download avviato", name, "ok");
+};
+
+/* ═══════════════════════ Salvataggio nel vault ═══════════════════════ */
+async function doSave(overwrite) {
+  const btn = $("btn-save");
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/save", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        project: $("sel-project").value,
+        folder: $("sel-folder").value,
+        filename: $("in-name").value.trim() || S.stem || "documento",
+        markdown: S.markdown,
+        frontmatter: $("chk-fm").checked,
+        overwrite: !!overwrite,
+        source: S.source,
+        kind: S.kind,
+        tool: S.tool
+      })
+    });
+
+    if (r.status === 409) {
+      const d = await r.json();
+      if (confirm("Esiste già:\n" + d.path + "\n\nOK = sovrascrivi\nAnnulla = salva come " + d.suggestion)) {
+        return doSave(true);
+      }
+      $("in-name").value = d.suggestion.replace(/\.md$/i, "");
+      updatePath();
+      return doSave(false);
+    }
+
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      return toast("Salvataggio fallito", e.detail || ("HTTP " + r.status), "err");
+    }
+
+    const d = await r.json();
+    toast("Salvato nel vault", d.relative, "ok");
+  } catch (err) {
+    toast("Errore di rete", String(err), "err");
+  } finally {
+    btn.disabled = !S.vaultOk;
+  }
+}
+$("btn-save").onclick = () => doSave(false);
+
+/* ═══════════════════════ Scorciatoie ═══════════════════════ */
+document.addEventListener("keydown", e => {
+  if ($("vault-modal").classList.contains("open")) {
+    if (e.key === "Escape") $("vault-modal").classList.remove("open");
+    return;
+  }
+  if (!$("view-result").classList.contains("active")) return;
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); $("btn-save").click(); }
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "c") { e.preventDefault(); $("btn-copy").click(); }
+  if (e.key === "Escape" && !typing) $("btn-new").click();
+});
+
+loadStatus().catch(err => toast("Impossibile leggere lo stato", String(err), "err"));
+</script>
+</body>
+</html>

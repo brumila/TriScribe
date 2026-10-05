@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+# percorso del vault e impostazioni locali: restano sul tuo PC
+config.json

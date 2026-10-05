@@ -36,6 +36,11 @@ function Write-Err  { param($m) Write-Host "    [X]  $m" -ForegroundColor Red }
 function Test-PyVersion { param($ver) return ($ver -and ([version]$ver -ge [version]'3.10') -and ([version]$ver -lt [version]'3.14')) }
 
 function Find-Python {
+    # Le prove falliscono per scelta (es. "py -3.12" senza la 3.12 installata) e
+    # scrivono su stderr: in PowerShell 5.1, con 'Stop', basterebbe a bloccare
+    # lo script. Qui dentro gli errori dei comandi provati si ignorano.
+    $ErrorActionPreference = 'Continue'
+
     # a) Python Launcher (py.exe) - il piu' affidabile su Windows
     $py = Get-Command py.exe -ErrorAction SilentlyContinue
     if ($py) {

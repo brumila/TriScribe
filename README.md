@@ -76,8 +76,16 @@ Al primo avvio clicca sul percorso in alto a destra e incolla la cartella dove v
 
 TriScribe nasce da tre progetti open source, uno per modalità:
 
-- [MarkItDown](https://github.com/microsoft/markitdown) di Microsoft, per i documenti digitali.
-- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) di PaddlePaddle, per lo scritto a mano.
-- [GLM-OCR](https://github.com/zai-org/GLM-OCR) di Z.ai, per i layout complessi.
+- [MarkItDown](https://github.com/microsoft/markitdown) di Microsoft, per i documenti digitali. Licenza MIT.
+- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) di PaddlePaddle, per lo scritto a mano. Licenza Apache 2.0, come i modelli PaddleOCR-VL e PP-DocLayoutV3.
+- [GLM-OCR](https://github.com/zai-org/GLM-OCR) di Z.ai, per i layout complessi. Il codice ha licenza Apache 2.0, il modello licenza MIT.
 
 Li ho riuniti in una sola schermata che gira tutta in locale, con la scelta della modalità in base al documento e il salvataggio del Markdown nelle cartelle del tuo vault.
+
+TriScribe non contiene il codice né i modelli dei tre progetti: li scarica l'installazione, ognuno con la sua licenza. Da GLM-OCR riprende i prompt e le regole di impaginazione del Markdown, come indicato in [NOTICE](NOTICE).
+
+## Licenza
+
+TriScribe è gratuito e open source, con licenza [Apache 2.0](LICENSE). Puoi usarlo, modificarlo e ridistribuirlo, anche in azienda, purché tu mantenga la licenza e il file [NOTICE](NOTICE). È fornito così com'è, senza garanzie.
+
+Se proponi una modifica, la rilasci con la stessa licenza.

@@ -1,0 +1,13 @@
+TriScribe
+Copyright 2026 Bruno Milani
+
+Distribuito con licenza Apache 2.0: vedi il file LICENSE.
+
+Parti di engines.py sono adattate da GLM-OCR
+(https://github.com/zai-org/GLM-OCR), Copyright 2026 Zhipu AI,
+licenza Apache 2.0:
+  - i prompt e le mappature delle etichette (glmocr/config.yaml);
+  - i parametri di generazione del modello;
+  - le regole di impaginazione del Markdown (ResultFormatter._format_content).
+TriScribe le riscrive per chiamare GLM-OCR in locale tramite Ollama,
+senza usare l'SDK glmocr.

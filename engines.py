@@ -173,6 +173,8 @@ def handwriting(data: bytes, ext: str, progress: Progress) -> str:
 # Stesso schema della pipeline ufficiale di GLM-OCR: PP-DocLayoutV3 trova le
 # regioni della pagina, GLM-OCR legge ognuna con il prompt del suo tipo.
 # Non usa l'SDK glmocr: di default manda i documenti all'API cloud di Zhipu.
+# Prompt, parametri e regole di impaginazione vengono da GLM-OCR (Apache 2.0):
+# vedi NOTICE.
 COMPLEX_SCALE = 200 / 72     # 200 dpi, il pdf_dpi di GLM-OCR
 
 DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
